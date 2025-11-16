@@ -1,28 +1,26 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  Alert,
-  Platform,
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { saveAddictiveApp, getAddictiveApps } from '../utils/storage';
-import { InstalledApp, AddictiveApp } from '../types';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  NativeModules,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { AddictiveApp, InstalledApp } from '../types';
+import { appMonitorManager } from '../utils/appMonitor';
+import { getAddictiveApps, saveAddictiveApp } from '../utils/storage';
 
-// Import the native module with error handling
-// Using require() here is necessary for optional native modules that may not be linked
-let RNInstalledApps: any = null;
-try {
-  // @ts-ignore - Native module may not be available
-  RNInstalledApps = require('react-native-get-app-list');
-} catch (e) {
-  console.log('react-native-get-app-list not available:', e);
-}
+const { InstalledApps } = NativeModules as {
+  InstalledApps?: {
+    getApps(): Promise<{ packageName: string; appName: string }[]>;
+  };
+};
 
 
 export default function AddAppScreen() {
@@ -41,26 +39,22 @@ export default function AddAppScreen() {
       setExistingPackages(packages);
 
       // Try to get actual installed apps on Android
-      if (Platform.OS === 'android' && RNInstalledApps?.getApps) {
+      if (Platform.OS === 'android' && InstalledApps) {
         try {
-          const installedApps = await RNInstalledApps.getApps();
+          console.log(">>>", InstalledApps)
+          const installedApps = await InstalledApps.getApps();
           console.log('Loaded installed apps:', installedApps.length);
           
-          // Transform to our format and filter out system apps
+          // Transform to our format
           const userApps: InstalledApp[] = installedApps
-            .filter((app: any) => {
-              // Filter out system apps and our own app
-              const packageName = app.packageName || '';
-              return !packageName.startsWith('com.android.') &&
-                     !packageName.startsWith('com.google.android.') &&
-                     packageName !== 'com.emergent.frontend' &&
-                     app.appName && 
-                     app.appName.trim() !== '';
-            })
             .map((app: any) => ({
               packageName: app.packageName,
               appName: app.appName || app.packageName,
             }))
+            .filter((app: InstalledApp) => {
+              // Additional filtering if needed
+              return app.appName && app.appName.trim() !== '';
+            })
             .sort((a: InstalledApp, b: InstalledApp) => 
               a.appName.localeCompare(b.appName)
             );
@@ -150,6 +144,9 @@ export default function AddAppScreen() {
       };
 
       await saveAddictiveApp(newApp);
+      // Update monitoring service
+      const allApps = await getAddictiveApps();
+      await appMonitorManager.updateMonitoredApps(allApps);
       Alert.alert('Success', `${app.appName} added to monitoring list`, [
         {
           text: 'OK',

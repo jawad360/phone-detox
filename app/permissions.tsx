@@ -1,19 +1,19 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Platform,
-  Linking,
-  Alert,
-  ScrollView,
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import * as IntentLauncher from 'expo-intent-launcher';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import * as IntentLauncher from 'expo-intent-launcher';
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import {
+  Alert,
+  Linking,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 const PERMISSIONS_GRANTED_KEY = '@permissions_granted';
 
@@ -234,7 +234,7 @@ export default function PermissionsScreen() {
       <View style={styles.infoContainer}>
         <Ionicons name="information-circle-outline" size={20} color="#8E8E93" />
         <Text style={styles.infoText}>
-          Your privacy is important. We only use these permissions to provide the app's core functionality.
+          Your privacy is important. We only use these permissions to provide the app&apos;s core functionality.
         </Text>
       </View>
     </ScrollView>

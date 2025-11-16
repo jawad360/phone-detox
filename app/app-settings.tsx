@@ -1,16 +1,17 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { getAddictiveApp, saveAddictiveApp, getCoolingPeriod } from '../utils/storage';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { AddictiveApp } from '../types';
+import { appMonitorManager } from '../utils/appMonitor';
+import { getAddictiveApp, getAddictiveApps, getCoolingPeriod, saveAddictiveApp } from '../utils/storage';
 
 const COOLING_PERIODS = [5, 10, 15, 30, 60, 120, 180];
 
@@ -57,6 +58,9 @@ export default function AppSettingsScreen() {
     try {
       await saveAddictiveApp(updatedApp);
       setApp(updatedApp);
+      // Update monitoring service
+      const allApps = await getAddictiveApps();
+      await appMonitorManager.updateMonitoredApps(allApps);
     } catch (error) {
       Alert.alert('Error', 'Failed to update settings');
     }
@@ -69,6 +73,9 @@ export default function AppSettingsScreen() {
     try {
       await saveAddictiveApp(updatedApp);
       setApp(updatedApp);
+      // Update monitoring service
+      const allApps = await getAddictiveApps();
+      await appMonitorManager.updateMonitoredApps(allApps);
     } catch (error) {
       Alert.alert('Error', 'Failed to update cooling period');
     }

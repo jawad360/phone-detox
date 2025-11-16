@@ -1,17 +1,18 @@
-import React, { useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  Alert,
-  Platform,
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { getAddictiveApps, removeAddictiveApp } from '../../utils/storage';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { AddictiveApp } from '../../types';
+import { appMonitorManager } from '../../utils/appMonitor';
+import { getAddictiveApps, removeAddictiveApp } from '../../utils/storage';
 
 export default function AppsScreen() {
   const router = useRouter();
@@ -36,6 +37,21 @@ export default function AppsScreen() {
     }, [loadApps])
   );
 
+  // Initialize app monitoring when apps change
+  useEffect(() => {
+    const initializeMonitoring = async () => {
+      if (apps.length > 0) {
+        await appMonitorManager.updateMonitoredApps(apps);
+      }
+    };
+    initializeMonitoring();
+  }, [apps]);
+
+  // Initialize monitoring on mount
+  useEffect(() => {
+    appMonitorManager.initialize();
+  }, []);
+
   const handleRemoveApp = async (packageName: string) => {
     Alert.alert(
       'Remove App',
@@ -48,6 +64,9 @@ export default function AppsScreen() {
           onPress: async () => {
             await removeAddictiveApp(packageName);
             await loadApps();
+            // Update monitoring service
+            const updatedApps = await getAddictiveApps();
+            await appMonitorManager.updateMonitoredApps(updatedApps);
           },
         },
       ]

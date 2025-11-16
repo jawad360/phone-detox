@@ -39,5 +39,15 @@ yarn-error.*
 app-example
 
 # generated native folders
+# Note: /android is NOT ignored because we have custom native code
+# (AppMonitorService, TimeSelectionDialog, AppMonitorModule)
 /ios
-/android
+# /android - commented out to allow custom native code to be committed
+
+# Android build artifacts (but keep source code)
+android/app/build/
+android/.gradle/
+android/local.properties
+android/app/release/
+android/app/debug/
+android/.idea/
