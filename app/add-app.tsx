@@ -41,7 +41,6 @@ export default function AddAppScreen() {
       // Try to get actual installed apps on Android
       if (Platform.OS === 'android' && InstalledApps) {
         try {
-          console.log(">>>", InstalledApps)
           const installedApps = await InstalledApps.getApps();
           console.log('Loaded installed apps:', installedApps.length);
           

@@ -200,8 +200,9 @@ class AppMonitorService : Service() {
         // Check if app is in cooling period
         val coolingEnd = getCoolingPeriodEnd(packageName)
         if (coolingEnd != null && coolingEnd > System.currentTimeMillis()) {
-            // App is in cooling period, block it
+            // App is in cooling period, show cooling period dialog and block app
             blockedApps.add(packageName)
+            showCoolingPeriodDialog(packageName, coolingEnd)
             blockApp(packageName, "App is in cooling period")
             return
         }
@@ -260,30 +261,14 @@ class AppMonitorService : Service() {
     private fun handleTimeUp(packageName: String, session: AppSession) {
         Log.d(TAG, "Time up for $packageName, behavior: ${session.behavior}, elapsed: ${(System.currentTimeMillis() - session.startTime) / 60000} minutes")
         
-        // Mark app as blocked immediately - this is critical
-        blockedApps.add(packageName)
-        
-        // Block immediately and aggressively
-        blockApp(packageName, "Time limit reached")
-        
-        // Also block again after a short delay to catch if app reopens
-        blockingHandler?.postDelayed({
-            val currentApp = getCurrentForegroundApp()
-            if (currentApp == packageName) {
-                Log.d(TAG, "App $packageName reopened after blocking, blocking again")
-                blockApp(packageName, "Time limit reached - re-blocking")
-            }
-        }, 500)
-        
         when (session.behavior) {
             "ask" -> {
-                // Ask for more time - show dialog
+                // Ask for more time - show dialog directly on the app (don't block first)
                 val appName = getAppName(packageName)
                 TimeSelectionDialog.show(this, packageName, appName, isExtension = true) { selectedMinutes ->
                     pendingTimeUpChecks.remove(packageName)
                     if (selectedMinutes > 0) {
-                        // User granted more time - unblock and extend session
-                        blockedApps.remove(packageName)
+                        // User granted more time - extend session (app is not blocked)
                         activeSessions[packageName] = session.copy(
                             startTime = System.currentTimeMillis(),
                             requestedMinutes = selectedMinutes
@@ -291,14 +276,31 @@ class AppMonitorService : Service() {
                         sendEventToReactNative("sessionExtended", createSessionMap(activeSessions[packageName]!!))
                         Log.d(TAG, "Session extended for $packageName: $selectedMinutes minutes")
                     } else {
-                        // User declined, start cooling period (app already blocked)
+                        // User declined or cancelled - block app and start cooling period
+                        blockedApps.add(packageName)
+                        blockApp(packageName, "User declined more time")
                         blockAppAndStartCooling(packageName, session)
                     }
                 }
             }
             "stop" -> {
-                // Stop immediately and start cooling period (app already blocked)
+                // Stop immediately and start cooling period
                 pendingTimeUpChecks.remove(packageName)
+                // Remove active session immediately
+                activeSessions.remove(packageName)
+                // Mark as blocked first
+                blockedApps.add(packageName)
+                // Block the app aggressively and immediately
+                blockApp(packageName, "Time limit reached")
+                // Also block again after a short delay to ensure it stays closed
+                blockingHandler?.postDelayed({
+                    val currentApp = getCurrentForegroundApp()
+                    if (currentApp == packageName) {
+                        Log.d(TAG, "App $packageName still in foreground after blocking, re-blocking")
+                        blockApp(packageName, "Time limit reached - re-blocking")
+                    }
+                }, 500)
+                // Start cooling period (this will also show the cooling dialog)
                 blockAppAndStartCooling(packageName, session)
             }
         }
@@ -314,6 +316,9 @@ class AppMonitorService : Service() {
         activeSessions.remove(packageName)
         // App is already blocked, keep it blocked during cooling period
         blockedApps.add(packageName)
+        
+        // Show cooling period dialog
+        showCoolingPeriodDialog(packageName, coolingEnd)
         
         // Notify React Native to save cooling period
         sendEventToReactNative("setCoolingPeriod", Arguments.createMap().apply {
@@ -405,7 +410,13 @@ class AppMonitorService : Service() {
                 // Check if any blocked app is currently in foreground and block it
                 val currentForeground = getCurrentForegroundApp()
                 if (currentForeground != null && blockedApps.contains(currentForeground)) {
-                    // App is blocked and in foreground - force close it
+                    // App is blocked and in foreground - check if it's in cooling period
+                    val coolingEnd = getCoolingPeriodEnd(currentForeground)
+                    if (coolingEnd != null && coolingEnd > now) {
+                        // App is in cooling period - show dialog
+                        showCoolingPeriodDialog(currentForeground, coolingEnd)
+                    }
+                    // Force close it immediately and aggressively
                     blockApp(currentForeground, "App is blocked - continuous enforcement")
                 }
                 
@@ -506,6 +517,26 @@ class AppMonitorService : Service() {
             pm.getApplicationLabel(appInfo).toString()
         } catch (e: Exception) {
             packageName
+        }
+    }
+    
+    private fun showCoolingPeriodDialog(packageName: String, coolingEndTime: Long) {
+        val appName = getAppName(packageName)
+        CoolingPeriodDialog.show(this, packageName, appName, coolingEndTime) {
+            // On OK clicked: close the app if it's open
+            blockApp(packageName, "User dismissed cooling period dialog")
+        }
+        
+        // The dialog will auto-dismiss when cooling period ends (handled by the dialog's timer)
+        // Also schedule cleanup when cooling period ends
+        val remainingTime = coolingEndTime - System.currentTimeMillis()
+        if (remainingTime > 0) {
+            blockingHandler?.postDelayed({
+                CoolingPeriodDialog.dismiss()
+                blockedApps.remove(packageName)
+                coolingPeriods.remove(packageName)
+                Log.d(TAG, "Cooling period ended for $packageName")
+            }, remainingTime)
         }
     }
 

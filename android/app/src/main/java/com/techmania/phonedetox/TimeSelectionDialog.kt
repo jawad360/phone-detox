@@ -39,7 +39,7 @@ class TimeSelectionDialog private constructor(
         }
     }
 
-    private val timeOptions = listOf(5, 10, 15, 30, 60, 120, 180)
+    private val timeOptions = listOf(2, 5, 10, 20)
 
     fun show() {
         // Create custom view programmatically
