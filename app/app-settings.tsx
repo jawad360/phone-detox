@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -21,12 +21,12 @@ export default function AppSettingsScreen() {
   const [app, setApp] = useState<AddictiveApp | null>(null);
   const [loading, setLoading] = useState(true);
   const [isInCooling, setIsInCooling] = useState(false);
+  const [activeSession, setActiveSession] = useState<{
+    startTime: number;
+    requestedMinutes: number;
+  } | null>(null);
 
-  useEffect(() => {
-    loadApp();
-  }, [packageName]);
-
-  const loadApp = async () => {
+  const loadApp = useCallback(async () => {
     if (!packageName) return;
 
     try {
@@ -43,13 +43,42 @@ export default function AppSettingsScreen() {
         Alert.alert('Error', 'App not found');
         router.back();
       }
-    } catch (error) {
-      console.error('Error loading app:', error);
+    } catch {
       Alert.alert('Error', 'Failed to load app settings');
     } finally {
       setLoading(false);
     }
-  };
+  }, [packageName, router]);
+
+  const loadActiveSession = useCallback(async () => {
+    if (!packageName) return;
+    
+    try {
+      const session = await appMonitorManager.getActiveSession(packageName);
+      if (session) {
+        setActiveSession({
+          startTime: session.startTime,
+          requestedMinutes: session.requestedMinutes,
+        });
+      } else {
+        setActiveSession(null);
+      }
+    } catch (error) {
+      console.error('Error loading active session:', error);
+    }
+  }, [packageName]);
+
+  useEffect(() => {
+    loadApp();
+    loadActiveSession();
+    // Set up interval to update session info every second
+    const interval = setInterval(() => {
+      loadActiveSession();
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [packageName, loadActiveSession, loadApp]);
+
 
   const handleBehaviorChange = async (newBehavior: 'ask' | 'stop') => {
     if (!app || isInCooling) return;
@@ -61,7 +90,7 @@ export default function AppSettingsScreen() {
       // Update monitoring service
       const allApps = await getAddictiveApps();
       await appMonitorManager.updateMonitoredApps(allApps);
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to update settings');
     }
   };
@@ -76,8 +105,32 @@ export default function AppSettingsScreen() {
       // Update monitoring service
       const allApps = await getAddictiveApps();
       await appMonitorManager.updateMonitoredApps(allApps);
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to update cooling period');
+    }
+  };
+
+  const formatRemainingTime = (startTime: number, requestedMinutes: number): string => {
+    const now = Date.now();
+    const elapsedMs = now - startTime;
+    const requestedMs = requestedMinutes * 60 * 1000;
+    const remainingMs = requestedMs - elapsedMs;
+    
+    if (remainingMs <= 0) {
+      return '0m';
+    }
+    
+    const totalSeconds = Math.floor(remainingMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    } else {
+      return `${seconds}s`;
     }
   };
 
@@ -113,9 +166,27 @@ export default function AppSettingsScreen() {
           <View style={styles.appIcon}>
             <Ionicons name="phone-portrait-outline" size={40} color="#007AFF" />
           </View>
-          <View>
+          <View style={styles.appInfo}>
             <Text style={styles.appName}>{app.appName}</Text>
             <Text style={styles.appPackage}>{app.packageName}</Text>
+            {activeSession && (
+              <View style={styles.sessionInfo}>
+                <View style={styles.sessionRow}>
+                  <Ionicons name="time-outline" size={16} color="#007AFF" />
+                  <Text style={styles.sessionText}>
+                    Requested: {activeSession.requestedMinutes >= 60 
+                      ? `${Math.floor(activeSession.requestedMinutes / 60)}h ${activeSession.requestedMinutes % 60}m`
+                      : `${activeSession.requestedMinutes}m`}
+                  </Text>
+                </View>
+                <View style={styles.sessionRow}>
+                  <Ionicons name="hourglass-outline" size={16} color="#FF9500" />
+                  <Text style={styles.sessionText}>
+                    Remaining: {formatRemainingTime(activeSession.startTime, activeSession.requestedMinutes)}
+                  </Text>
+                </View>
+              </View>
+            )}
           </View>
         </View>
       </View>
@@ -280,6 +351,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 16,
   },
+  appInfo: {
+    flex: 1,
+  },
   appName: {
     fontSize: 20,
     fontWeight: '700',
@@ -289,6 +363,24 @@ const styles = StyleSheet.create({
   appPackage: {
     fontSize: 12,
     color: '#8E8E93',
+    marginBottom: 8,
+  },
+  sessionInfo: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5EA',
+  },
+  sessionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  sessionText: {
+    fontSize: 13,
+    color: '#007AFF',
+    marginLeft: 6,
+    fontWeight: '500',
   },
   sectionTitle: {
     fontSize: 20,

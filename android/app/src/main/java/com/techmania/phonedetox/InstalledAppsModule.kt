@@ -59,6 +59,7 @@ class InstalledAppsModule(reactContext: ReactApplicationContext) : ReactContextB
         val coreSystemPackages = listOf(
             "android",
             "com.android.systemui",
+            "com.android.internal",
             "com.android.settings",
             "com.android.phone",
             "com.android.providers",

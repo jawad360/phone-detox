@@ -119,6 +119,25 @@ class AppMonitorManager {
       this.isInitialized = false;
     }
   }
+
+  async getActiveSession(packageName: string): Promise<{
+    packageName: string;
+    startTime: number;
+    requestedMinutes: number;
+    behavior: string;
+  } | null> {
+    if (Platform.OS !== 'android' || !AppMonitor) {
+      return null;
+    }
+
+    try {
+      const session = await AppMonitor.getActiveSession(packageName);
+      return session;
+    } catch (error) {
+      console.error('Error getting active session:', error);
+      return null;
+    }
+  }
 }
 
 export const appMonitorManager = new AppMonitorManager();

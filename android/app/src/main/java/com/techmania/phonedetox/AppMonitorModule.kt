@@ -82,5 +82,27 @@ class AppMonitorModule(reactContext: ReactApplicationContext) : ReactContextBase
         val service = AppMonitorService.getInstance()
         service?.setCoolingPeriodEnd(packageName, endTime.toLong())
     }
+
+    @ReactMethod
+    fun getActiveSession(packageName: String, promise: Promise) {
+        try {
+            val service = AppMonitorService.getInstance()
+            val session = service?.getActiveSession(packageName)
+            
+            if (session != null) {
+                val sessionMap = Arguments.createMap().apply {
+                    putString("packageName", session.packageName)
+                    putDouble("startTime", session.startTime.toDouble())
+                    putInt("requestedMinutes", session.requestedMinutes)
+                    putString("behavior", session.behavior)
+                }
+                promise.resolve(sessionMap)
+            } else {
+                promise.resolve(null)
+            }
+        } catch (e: Exception) {
+            promise.reject("ERROR", "Failed to get active session: ${e.message}", e)
+        }
+    }
 }
 

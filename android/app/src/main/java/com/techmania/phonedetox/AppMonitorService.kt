@@ -113,6 +113,10 @@ class AppMonitorService : Service() {
         Log.d(TAG, "Set cooling period for $packageName until $endTime")
     }
 
+    fun getActiveSession(packageName: String): AppSession? {
+        return activeSessions[packageName]
+    }
+
     private fun startMonitoring() {
         if (isMonitoring) return
         isMonitoring = true
@@ -152,7 +156,8 @@ class AppMonitorService : Service() {
         }
 
         // Always check all active sessions for expiration (even if app is closed/minimized)
-        checkAllActiveSessions()
+        // This will handle expired sessions for foreground apps immediately
+        checkAllActiveSessions(foregroundApp)
         
         if (foregroundApp != null) {
             // Check if app is blocked (time expired or in cooling period)
@@ -163,14 +168,28 @@ class AppMonitorService : Service() {
             }
             
             // Always check if current foreground app has expired time
+            // Remove the pendingTimeUpChecks check to allow continuous monitoring
             if (monitoredApps.contains(foregroundApp)) {
                 val activeSession = activeSessions[foregroundApp]
-                if (activeSession != null && !pendingTimeUpChecks.contains(foregroundApp)) {
-                    val elapsedMinutes = (System.currentTimeMillis() - activeSession.startTime) / 60000
-                    if (elapsedMinutes >= activeSession.requestedMinutes) {
-                        // Time is up, enforce behavior
-                        pendingTimeUpChecks.add(foregroundApp)
-                        handleTimeUp(foregroundApp, activeSession)
+                if (activeSession != null) {
+                    val elapsedMs = System.currentTimeMillis() - activeSession.startTime
+                    val elapsedMinutes = elapsedMs / 60000
+                    val requestedMs = activeSession.requestedMinutes * 60000L
+                    
+                    Log.d(TAG, "Checking session for $foregroundApp: elapsed=${elapsedMs}ms (${elapsedMinutes}m), requested=${requestedMs}ms (${activeSession.requestedMinutes}m)")
+                    
+                    if (elapsedMs >= requestedMs) {
+                        // Time is up, enforce behavior (only if not already pending)
+                        if (!pendingTimeUpChecks.contains(foregroundApp)) {
+                            Log.d(TAG, "Time expired for $foregroundApp, handling time up (app is in foreground)")
+                            pendingTimeUpChecks.add(foregroundApp)
+                            handleTimeUp(foregroundApp, activeSession, isInForeground = true)
+                        } else {
+                            Log.d(TAG, "Time expired for $foregroundApp but already pending check")
+                        }
+                    } else {
+                        // Time not expired yet, remove from pending if it was there
+                        pendingTimeUpChecks.remove(foregroundApp)
                     }
                 }
             }
@@ -258,29 +277,43 @@ class AppMonitorService : Service() {
         }
     }
 
-    private fun handleTimeUp(packageName: String, session: AppSession) {
-        Log.d(TAG, "Time up for $packageName, behavior: ${session.behavior}, elapsed: ${(System.currentTimeMillis() - session.startTime) / 60000} minutes")
+    private fun handleTimeUp(packageName: String, session: AppSession, isInForeground: Boolean = false) {
+        Log.d(TAG, "Time up for $packageName, behavior: ${session.behavior}, elapsed: ${(System.currentTimeMillis() - session.startTime) / 60000} minutes, inForeground: $isInForeground")
         
         when (session.behavior) {
             "ask" -> {
-                // Ask for more time - show dialog directly on the app (don't block first)
-                val appName = getAppName(packageName)
-                TimeSelectionDialog.show(this, packageName, appName, isExtension = true) { selectedMinutes ->
-                    pendingTimeUpChecks.remove(packageName)
-                    if (selectedMinutes > 0) {
-                        // User granted more time - extend session (app is not blocked)
-                        activeSessions[packageName] = session.copy(
-                            startTime = System.currentTimeMillis(),
-                            requestedMinutes = selectedMinutes
-                        )
-                        sendEventToReactNative("sessionExtended", createSessionMap(activeSessions[packageName]!!))
-                        Log.d(TAG, "Session extended for $packageName: $selectedMinutes minutes")
-                    } else {
-                        // User declined or cancelled - block app and start cooling period
-                        blockedApps.add(packageName)
-                        blockApp(packageName, "User declined more time")
-                        blockAppAndStartCooling(packageName, session)
+                if (isInForeground && !blockedApps.contains(packageName)) {
+                    // App is in foreground and not already blocked - show dialog to ask for more time
+                    Log.d(TAG, "Showing time extension dialog for $packageName (app is in foreground, behavior=ask)")
+                    val appName = getAppName(packageName)
+                    TimeSelectionDialog.show(this, packageName, appName, isExtension = true) { selectedMinutes ->
+                        pendingTimeUpChecks.remove(packageName)
+                        if (selectedMinutes > 0) {
+                            // User granted more time - extend session (app is not blocked)
+                            activeSessions[packageName] = session.copy(
+                                startTime = System.currentTimeMillis(),
+                                requestedMinutes = selectedMinutes
+                            )
+                            sendEventToReactNative("sessionExtended", createSessionMap(activeSessions[packageName]!!))
+                            Log.d(TAG, "Session extended for $packageName: $selectedMinutes minutes")
+                        } else {
+                            // User declined or cancelled - block app and start cooling period
+                            blockedApps.add(packageName)
+                            blockApp(packageName, "User declined more time")
+                            blockAppAndStartCooling(packageName, session)
+                        }
                     }
+                } else {
+                    // App is not in foreground or already blocked - block immediately and start cooling period
+                    if (blockedApps.contains(packageName)) {
+                        Log.d(TAG, "App $packageName already blocked, skipping dialog")
+                    } else {
+                        Log.d(TAG, "App $packageName not in foreground, blocking immediately without asking")
+                    }
+                    pendingTimeUpChecks.remove(packageName)
+                    blockedApps.add(packageName)
+                    blockApp(packageName, "Time limit reached - app not in foreground or already blocked")
+                    blockAppAndStartCooling(packageName, session)
                 }
             }
             "stop" -> {
@@ -407,8 +440,32 @@ class AppMonitorService : Service() {
                 val now = System.currentTimeMillis()
                 val appsToUnblock = mutableListOf<String>()
                 
-                // Check if any blocked app is currently in foreground and block it
+                // Get current foreground app first
                 val currentForeground = getCurrentForegroundApp()
+                
+                // First, check for expired sessions that need to be blocked
+                activeSessions.forEach { (packageName, session) ->
+                    val elapsedMs = now - session.startTime
+                    val elapsedMinutes = elapsedMs / 60000
+                    val requestedMs = session.requestedMinutes * 60000L
+                    
+                    if (elapsedMs >= requestedMs && !blockedApps.contains(packageName)) {
+                        // Time expired but app not blocked yet
+                        // Only show dialog if app is in foreground, otherwise block immediately
+                        val isInForeground = currentForeground == packageName
+                        Log.d(TAG, "Blocking check: Time expired for $packageName (${elapsedMs}ms >= ${requestedMs}ms), in foreground: $isInForeground")
+                        
+                        if (!pendingTimeUpChecks.contains(packageName)) {
+                            pendingTimeUpChecks.add(packageName)
+                            // Pass the foreground status to handleTimeUp
+                            handleTimeUp(packageName, session, isInForeground = isInForeground)
+                        } else {
+                            Log.d(TAG, "Blocking check: $packageName already pending time up check")
+                        }
+                    }
+                }
+                
+                // Check if any blocked app is currently in foreground and block it
                 if (currentForeground != null && blockedApps.contains(currentForeground)) {
                     // App is blocked and in foreground - check if it's in cooling period
                     val coolingEnd = getCoolingPeriodEnd(currentForeground)
@@ -478,29 +535,44 @@ class AppMonitorService : Service() {
         }
     }
 
-    private fun checkAllActiveSessions() {
+    private fun checkAllActiveSessions(currentForegroundApp: String? = null) {
         // Check all active sessions to see if time has expired
         // This ensures timer continues even when app is closed/minimized
         val now = System.currentTimeMillis()
-        val expiredSessions = mutableListOf<String>()
+        val expiredSessions = mutableListOf<Pair<String, AppSession>>()
         
         activeSessions.forEach { (packageName, session) ->
-            val elapsedMinutes = (now - session.startTime) / 60000
-            if (elapsedMinutes >= session.requestedMinutes) {
+            val elapsedMs = now - session.startTime
+            val elapsedMinutes = elapsedMs / 60000
+            val requestedMs = session.requestedMinutes * 60000L
+            
+            if (elapsedMs >= requestedMs) {
                 // Time has expired - mark for handling
-                expiredSessions.add(packageName)
-                Log.d(TAG, "Session expired for $packageName: ${elapsedMinutes} minutes elapsed (limit: ${session.requestedMinutes})")
+                expiredSessions.add(Pair(packageName, session))
+                Log.d(TAG, "Session expired for $packageName: ${elapsedMs}ms (${elapsedMinutes}m) elapsed, limit: ${requestedMs}ms (${session.requestedMinutes}m)")
             }
         }
         
-        // Handle expired sessions - if app is currently in foreground, it will be handled in checkForegroundApp
-        // If app is closed/minimized, we keep the session but will enforce when app is reopened
-        expiredSessions.forEach { packageName ->
-            val session = activeSessions[packageName]
-            if (session != null && lastForegroundApp != packageName) {
-                // App is not in foreground, but time expired - keep session for when app reopens
+        // Handle expired sessions
+        expiredSessions.forEach { (packageName, session) ->
+            if (currentForegroundApp == packageName) {
+                // App is currently in foreground and time expired - handle immediately
+                if (!pendingTimeUpChecks.contains(packageName)) {
+                    Log.d(TAG, "Handling expired session for foreground app $packageName")
+                    pendingTimeUpChecks.add(packageName)
+                    handleTimeUp(packageName, session, isInForeground = true)
+                } else {
+                    Log.d(TAG, "Expired session for foreground app $packageName already pending")
+                }
+            } else {
+                // App is not in foreground, but time expired - block immediately without showing dialog
                 // The session will be enforced when the app is launched again
-                Log.d(TAG, "Session expired for closed app $packageName, will enforce on next launch")
+                Log.d(TAG, "Session expired for closed app $packageName, blocking without dialog")
+                if (!pendingTimeUpChecks.contains(packageName)) {
+                    pendingTimeUpChecks.add(packageName)
+                    // For apps not in foreground, block immediately without asking
+                    handleTimeUp(packageName, session, isInForeground = false)
+                }
             }
         }
     }

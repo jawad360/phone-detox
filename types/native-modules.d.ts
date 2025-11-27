@@ -16,6 +16,12 @@ interface AppMonitorInterface {
     coolingPeriodMinutes?: number;
   }): void;
   setCoolingPeriod(packageName: string, endTime: number): void;
+  getActiveSession(packageName: string): Promise<{
+    packageName: string;
+    startTime: number;
+    requestedMinutes: number;
+    behavior: string;
+  } | null>;
 }
 
 export interface NativeModules {
