@@ -75,12 +75,11 @@ export default function AppSettingsScreen() {
 
   const loadCoolingPeriod = useCallback(async () => {
     if (!packageName) return;
-    
     try {
-      const coolingEnd = await getCoolingPeriod(packageName);
-      if (coolingEnd && coolingEnd > Date.now()) {
+      const coolingEnd = await appMonitorManager.getCoolingPeriod(packageName);
+      if (coolingEnd?.endTime && coolingEnd.endTime > Date.now()) {
         setIsInCooling(true);
-        setCoolingPeriodEnd(coolingEnd);
+        setCoolingPeriodEnd(coolingEnd.endTime);
       } else {
         setIsInCooling(false);
         setCoolingPeriodEnd(null);

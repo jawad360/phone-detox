@@ -1,16 +1,16 @@
 import 'react-native';
 
 interface InstalledAppsInterface {
-  getApps(): Promise<Array<{
+  getApps(): Promise<{
     packageName: string;
     appName: string;
-  }>>;
+  }[]>;
 }
 
 interface AppMonitorInterface {
   startMonitoring(): void;
   stopMonitoring(): void;
-  updateMonitoredApps(apps: Array<{ packageName: string }>): void;
+  updateMonitoredApps(apps: { packageName: string }[]): void;
   updateAppConfig(packageName: string, config: {
     behavior?: string;
     coolingPeriodMinutes?: number;
@@ -21,6 +21,10 @@ interface AppMonitorInterface {
     startTime: number;
     requestedMinutes: number;
     behavior: string;
+  } | null>;
+  getCoolingPeriod(packageName: string): Promise<{
+    packageName: string;
+    endTime: number;
   } | null>;
 }
 

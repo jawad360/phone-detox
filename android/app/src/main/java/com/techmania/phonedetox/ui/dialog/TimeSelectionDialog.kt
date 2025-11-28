@@ -37,7 +37,7 @@ class TimeSelectionDialog private constructor(
         }
     }
 
-    private val timeOptions = listOf(2, 5, 10, 20)
+    private val timeOptions = listOf(1, 2, 5, 10, 20)
 
     fun show() {
         try {

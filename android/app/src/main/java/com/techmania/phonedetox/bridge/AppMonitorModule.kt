@@ -101,5 +101,24 @@ class AppMonitorModule(reactContext: ReactApplicationContext) : ReactContextBase
             promise.reject("ERROR", "Failed to get active session: ${e.message}", e)
         }
     }
+    
+    @ReactMethod
+    fun getCoolingPeriod(packageName: String, promise: Promise) {
+        try {
+            val service = AppMonitorService.getInstance()
+            val coolingPeriod = service?.getCoolingPeriod(packageName)
+            if (coolingPeriod != null) {
+                val coolingPeriodMap = Arguments.createMap().apply {
+                    putString("packageName", packageName)
+                    putDouble("endTime", coolingPeriod.toDouble())
+                }
+                promise.resolve(coolingPeriodMap)
+            } else {
+                promise.resolve(null)
+            }
+        } catch (e: Exception) {
+            promise.reject("ERROR", "Failed to get cooling period: ${e.message}", e)
+        }
+    }
 }
 

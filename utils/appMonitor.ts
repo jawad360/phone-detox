@@ -138,6 +138,29 @@ class AppMonitorManager {
       return null;
     }
   }
+
+  async getCoolingPeriod(packageName: string): Promise<{
+    packageName: string;
+    endTime: number;
+  } | null> {
+    if (Platform.OS !== 'android' || !AppMonitor) {
+      return null;
+    }
+
+    try {
+      const coolingPeriod = await AppMonitor.getCoolingPeriod(packageName);
+      if (coolingPeriod) {
+        return {
+          packageName: coolingPeriod.packageName,
+          endTime: coolingPeriod.endTime,
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting cooling period:', error);
+      return null;
+    }
+  }
 }
 
 export const appMonitorManager = new AppMonitorManager();
