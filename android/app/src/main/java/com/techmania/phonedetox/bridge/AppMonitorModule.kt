@@ -1,13 +1,12 @@
-package com.techmania.phonedetox
+package com.techmania.phonedetox.bridge
 
 import android.content.Intent
 import com.facebook.react.bridge.*
-import com.facebook.react.modules.core.DeviceEventManagerModule
+import com.techmania.phonedetox.service.AppMonitorService
 
 class AppMonitorModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     
     init {
-        // Set React context in service
         val service = AppMonitorService.getInstance()
         service?.setReactContext(reactContext)
     }
@@ -18,20 +17,18 @@ class AppMonitorModule(reactContext: ReactApplicationContext) : ReactContextBase
 
     @ReactMethod
     fun addListener(eventName: String) {
-        // Required for NativeEventEmitter - events are emitted from AppMonitorService
-        // This is a no-op as events are sent directly via DeviceEventManagerModule
+        // Required for NativeEventEmitter
     }
 
     @ReactMethod
     fun removeListeners(count: Int) {
-        // Required for NativeEventEmitter - events are emitted from AppMonitorService
-        // This is a no-op as events are sent directly via DeviceEventManagerModule
+        // Required for NativeEventEmitter
     }
 
     @ReactMethod
     fun startMonitoring() {
         val intent = Intent(reactApplicationContext, AppMonitorService::class.java).apply {
-            action = "START_MONITORING"
+            action = AppMonitorService.ACTION_START_MONITORING
         }
         reactApplicationContext.startForegroundService(intent)
     }
@@ -39,7 +36,7 @@ class AppMonitorModule(reactContext: ReactApplicationContext) : ReactContextBase
     @ReactMethod
     fun stopMonitoring() {
         val intent = Intent(reactApplicationContext, AppMonitorService::class.java).apply {
-            action = "STOP_MONITORING"
+            action = AppMonitorService.ACTION_STOP_MONITORING
         }
         reactApplicationContext.startService(intent)
     }
@@ -56,8 +53,8 @@ class AppMonitorModule(reactContext: ReactApplicationContext) : ReactContextBase
         }
         
         val intent = Intent(reactApplicationContext, AppMonitorService::class.java).apply {
-            action = "UPDATE_MONITORED_APPS"
-            putStringArrayListExtra("apps", ArrayList(packageNames))
+            action = AppMonitorService.ACTION_UPDATE_MONITORED_APPS
+            putStringArrayListExtra(AppMonitorService.EXTRA_APPS, ArrayList(packageNames))
         }
         reactApplicationContext.startService(intent)
     }

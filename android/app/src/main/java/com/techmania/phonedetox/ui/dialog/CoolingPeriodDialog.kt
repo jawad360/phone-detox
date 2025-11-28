@@ -1,4 +1,4 @@
-package com.techmania.phonedetox
+package com.techmania.phonedetox.ui.dialog
 
 import android.app.Dialog
 import android.content.Context
@@ -33,12 +33,10 @@ class CoolingPeriodDialog private constructor(
             coolingEndTime: Long,
             onOkClicked: (() -> Unit)? = null
         ) {
-            // Dismiss any existing dialog (will show new one for this app)
             activeDialog.get()?.dismiss()
-
-            // Use application context to avoid memory leaks
-            val appContext = context.applicationContext
-            val dialog = CoolingPeriodDialog(appContext, packageName, appName, coolingEndTime, onOkClicked)
+            // Use the context directly for overlay dialogs, not applicationContext
+            // This ensures we have the proper window manager access
+            val dialog = CoolingPeriodDialog(context, packageName, appName, coolingEndTime, onOkClicked)
             activeDialog.set(dialog)
             dialog.show()
         }
@@ -49,40 +47,41 @@ class CoolingPeriodDialog private constructor(
     }
 
     fun show() {
-        // Create custom view programmatically
-        val view = createDialogView(context)
-
-        // Create dialog with overlay type
-        dialog = Dialog(context, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen).apply {
-            window?.apply {
-                setType(
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                    } else {
-                        @Suppress("DEPRECATION")
-                        WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
-                    }
-                )
-                // Allow touch events and focus
-                setFlags(0, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
-                setFormat(PixelFormat.TRANSLUCENT)
-                setGravity(Gravity.CENTER)
-                setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        try {
+            val view = createDialogView(context)
+            dialog = Dialog(context, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen).apply {
+                window?.apply {
+                    setType(
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                        } else {
+                            @Suppress("DEPRECATION")
+                            WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+                        }
+                    )
+                    // Allow touch events - remove FLAG_NOT_FOCUSABLE
+                    // Keep default flags but ensure dialog is focusable and can receive touch
+                    addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
+                    addFlags(WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
+                    setFormat(PixelFormat.TRANSLUCENT)
+                    setGravity(Gravity.CENTER)
+                    setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                }
+                setContentView(view)
+                setCancelable(false)
+                show()
             }
-            setContentView(view)
-            setCancelable(false)
-            show()
+            startTimer()
+        } catch (e: Exception) {
+            android.util.Log.e("CoolingPeriodDialog", "Error showing dialog: ${e.message}", e)
         }
-        
-        // Start timer
-        startTimer()
     }
 
     private fun createDialogView(context: Context): View {
         val mainLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 48, 48, 48)
-            setBackgroundColor(0xE6000000.toInt()) // Semi-transparent black
+            setBackgroundColor(0xE6000000.toInt())
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -90,7 +89,6 @@ class CoolingPeriodDialog private constructor(
             )
         }
         
-        // Content container
         val contentContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(0xFFFFFFFF.toInt())
@@ -103,7 +101,6 @@ class CoolingPeriodDialog private constructor(
             }
         }
         
-        // Icon
         val icon = TextView(context).apply {
             text = "⏰"
             textSize = 48f
@@ -116,7 +113,6 @@ class CoolingPeriodDialog private constructor(
         }
         contentContainer.addView(icon)
         
-        // Title
         val title = TextView(context).apply {
             text = "$appName is in cooling period"
             textSize = 20f
@@ -130,7 +126,6 @@ class CoolingPeriodDialog private constructor(
         }
         contentContainer.addView(title)
         
-        // Message
         val message = TextView(context).apply {
             text = "Please come back after the cooling period is complete."
             textSize = 16f
@@ -144,7 +139,6 @@ class CoolingPeriodDialog private constructor(
         }
         contentContainer.addView(message)
         
-        // Timer display
         val timerContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -187,7 +181,6 @@ class CoolingPeriodDialog private constructor(
         timerContainer.addView(timerText)
         contentContainer.addView(timerContainer)
         
-        // OK button - dismisses dialog and closes app
         val okButton = Button(context).apply {
             text = "OK"
             isEnabled = true
@@ -220,12 +213,10 @@ class CoolingPeriodDialog private constructor(
                 val remaining = coolingEndTime - now
                 
                 if (remaining <= 0) {
-                    // Cooling period ended
                     dismiss()
                 } else {
-                    // Update timer display
                     timerTextView?.text = formatTimeRemaining(coolingEndTime)
-                    timerHandler?.postDelayed(this, 1000) // Update every second
+                    timerHandler?.postDelayed(this, 1000)
                 }
             }
         }

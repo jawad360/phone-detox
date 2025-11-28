@@ -1,4 +1,4 @@
-package com.techmania.phonedetox
+package com.techmania.phonedetox.bridge
 
 import com.facebook.react.ReactPackage
 import com.facebook.react.bridge.NativeModule

@@ -13,7 +13,7 @@ import { AddictiveApp } from '../types';
 import { appMonitorManager } from '../utils/appMonitor';
 import { getAddictiveApp, getAddictiveApps, getCoolingPeriod, saveAddictiveApp } from '../utils/storage';
 
-const COOLING_PERIODS = [5, 10, 15, 30, 60, 120, 180];
+const COOLING_PERIODS = [5, 10, 15, 30];
 
 export default function AppSettingsScreen() {
   const router = useRouter();
@@ -21,6 +21,7 @@ export default function AppSettingsScreen() {
   const [app, setApp] = useState<AddictiveApp | null>(null);
   const [loading, setLoading] = useState(true);
   const [isInCooling, setIsInCooling] = useState(false);
+  const [coolingPeriodEnd, setCoolingPeriodEnd] = useState<number | null>(null);
   const [activeSession, setActiveSession] = useState<{
     startTime: number;
     requestedMinutes: number;
@@ -38,6 +39,10 @@ export default function AppSettingsScreen() {
         const coolingEnd = await getCoolingPeriod(packageName);
         if (coolingEnd && coolingEnd > Date.now()) {
           setIsInCooling(true);
+          setCoolingPeriodEnd(coolingEnd);
+        } else {
+          setIsInCooling(false);
+          setCoolingPeriodEnd(null);
         }
       } else {
         Alert.alert('Error', 'App not found');
@@ -68,16 +73,35 @@ export default function AppSettingsScreen() {
     }
   }, [packageName]);
 
+  const loadCoolingPeriod = useCallback(async () => {
+    if (!packageName) return;
+    
+    try {
+      const coolingEnd = await getCoolingPeriod(packageName);
+      if (coolingEnd && coolingEnd > Date.now()) {
+        setIsInCooling(true);
+        setCoolingPeriodEnd(coolingEnd);
+      } else {
+        setIsInCooling(false);
+        setCoolingPeriodEnd(null);
+      }
+    } catch (error) {
+      console.error('Error loading cooling period:', error);
+    }
+  }, [packageName]);
+
   useEffect(() => {
     loadApp();
     loadActiveSession();
-    // Set up interval to update session info every second
+    loadCoolingPeriod();
+    // Set up interval to update session info and cooling period every second
     const interval = setInterval(() => {
       loadActiveSession();
+      loadCoolingPeriod();
     }, 1000);
     
     return () => clearInterval(interval);
-  }, [packageName, loadActiveSession, loadApp]);
+  }, [packageName, loadActiveSession, loadApp, loadCoolingPeriod]);
 
 
   const handleBehaviorChange = async (newBehavior: 'ask' | 'stop') => {
@@ -115,6 +139,28 @@ export default function AppSettingsScreen() {
     const elapsedMs = now - startTime;
     const requestedMs = requestedMinutes * 60 * 1000;
     const remainingMs = requestedMs - elapsedMs;
+    
+    if (remainingMs <= 0) {
+      return '0m';
+    }
+    
+    const totalSeconds = Math.floor(remainingMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  };
+
+  const formatCoolingPeriodRemaining = (endTime: number): string => {
+    const now = Date.now();
+    const remainingMs = endTime - now;
     
     if (remainingMs <= 0) {
       return '0m';
@@ -183,6 +229,16 @@ export default function AppSettingsScreen() {
                   <Ionicons name="hourglass-outline" size={16} color="#FF9500" />
                   <Text style={styles.sessionText}>
                     Remaining: {formatRemainingTime(activeSession.startTime, activeSession.requestedMinutes)}
+                  </Text>
+                </View>
+              </View>
+            )}
+            {isInCooling && coolingPeriodEnd && (
+              <View style={styles.coolingInfo}>
+                <View style={styles.sessionRow}>
+                  <Ionicons name="snow-outline" size={16} color="#FF3B30" />
+                  <Text style={styles.coolingPeriodText}>
+                    Cooling Period: {formatCoolingPeriodRemaining(coolingPeriodEnd)} remaining
                   </Text>
                 </View>
               </View>
@@ -371,6 +427,15 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E5E5EA',
   },
+  coolingInfo: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#FFE5E5',
+    backgroundColor: '#FFF5F5',
+    borderRadius: 8,
+    padding: 8,
+  },
   sessionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -381,6 +446,12 @@ const styles = StyleSheet.create({
     color: '#007AFF',
     marginLeft: 6,
     fontWeight: '500',
+  },
+  coolingPeriodText: {
+    fontSize: 13,
+    color: '#FF3B30',
+    marginLeft: 6,
+    fontWeight: '600',
   },
   sectionTitle: {
     fontSize: 20,

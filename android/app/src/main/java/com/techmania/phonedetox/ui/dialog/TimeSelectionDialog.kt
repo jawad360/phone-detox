@@ -1,4 +1,4 @@
-package com.techmania.phonedetox
+package com.techmania.phonedetox.ui.dialog
 
 import android.app.Dialog
 import android.content.Context
@@ -28,12 +28,10 @@ class TimeSelectionDialog private constructor(
             isExtension: Boolean = false,
             onTimeSelected: (Int) -> Unit
         ) {
-            // Dismiss any existing dialog
             activeDialog.get()?.dismiss()
-
-            // Use application context to avoid memory leaks
-            val appContext = context.applicationContext
-            val dialog = TimeSelectionDialog(appContext, packageName, appName, isExtension, onTimeSelected)
+            // Use the context directly for overlay dialogs, not applicationContext
+            // This ensures we have the proper window manager access
+            val dialog = TimeSelectionDialog(context, packageName, appName, isExtension, onTimeSelected)
             activeDialog.set(dialog)
             dialog.show()
         }
@@ -42,29 +40,32 @@ class TimeSelectionDialog private constructor(
     private val timeOptions = listOf(2, 5, 10, 20)
 
     fun show() {
-        // Create custom view programmatically
-        val view = createDialogView(context)
-
-        // Create dialog with overlay type
-        dialog = Dialog(context, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen).apply {
-            window?.apply {
-                setType(
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                    } else {
-                        @Suppress("DEPRECATION")
-                        WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
-                    }
-                )
-                // Allow touch events and focus
-                setFlags(0, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
-                setFormat(PixelFormat.TRANSLUCENT)
-                setGravity(Gravity.CENTER)
-                setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        try {
+            val view = createDialogView(context)
+            dialog = Dialog(context, android.R.style.Theme_Translucent_NoTitleBar_Fullscreen).apply {
+                window?.apply {
+                    setType(
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                        } else {
+                            @Suppress("DEPRECATION")
+                            WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+                        }
+                    )
+                    // Allow touch events - remove FLAG_NOT_FOCUSABLE
+                    // Keep default flags but ensure dialog is focusable and can receive touch
+                    addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL)
+                    addFlags(WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH)
+                    setFormat(PixelFormat.TRANSLUCENT)
+                    setGravity(Gravity.CENTER)
+                    setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                }
+                setContentView(view)
+                setCancelable(false)
+                show()
             }
-            setContentView(view)
-            setCancelable(false)
-            show()
+        } catch (e: Exception) {
+            android.util.Log.e("TimeSelectionDialog", "Error showing dialog: ${e.message}", e)
         }
     }
 
@@ -72,7 +73,7 @@ class TimeSelectionDialog private constructor(
         val mainLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(48, 48, 48, 48)
-            setBackgroundColor(0xE6000000.toInt()) // Semi-transparent black
+            setBackgroundColor(0xE6000000.toInt())
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -80,7 +81,6 @@ class TimeSelectionDialog private constructor(
             )
         }
         
-        // Content container
         val contentContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(0xFFFFFFFF.toInt())
@@ -93,7 +93,6 @@ class TimeSelectionDialog private constructor(
             }
         }
         
-        // Title
         val title = TextView(context).apply {
             text = if (isExtension) {
                 "Time's up! How much more time?"
@@ -111,7 +110,6 @@ class TimeSelectionDialog private constructor(
         }
         contentContainer.addView(title)
         
-        // Time options container
         timeOptions.forEach { minutes ->
             val button = createTimeButton(context, minutes)
             button.setOnClickListener {
@@ -121,7 +119,6 @@ class TimeSelectionDialog private constructor(
             contentContainer.addView(button)
         }
         
-        // Cancel button
         val cancelButton = Button(context).apply {
             text = "Cancel"
             setOnClickListener {
